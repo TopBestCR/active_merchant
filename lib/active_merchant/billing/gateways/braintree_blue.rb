@@ -48,7 +48,7 @@ module ActiveMerchant #:nodoc:
 
       def refund(transaction_id, options = {})
         commit do
-          result = Braintree::Transaction.find(transaction_id).refund
+          result = Braintree::Transaction.refund(transaction_id, options[:amount])
           Response.new(result.success?, message_from_result(result))
         end
       end
