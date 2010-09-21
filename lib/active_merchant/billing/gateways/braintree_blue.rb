@@ -42,13 +42,10 @@ module ActiveMerchant #:nodoc:
         authorize(money, credit_card_or_vault_id, options.merge(:submit_for_settlement => true))
       end
 
-      def credit(money, credit_card_or_vault_id, options = {})
-        create_transaction(:credit, money, credit_card_or_vault_id, options)
-      end
-
-      def refund(transaction_id, options = {})
+      def credit(money, transaction_id, options = {})
         commit do
-          result = Braintree::Transaction.refund(transaction_id, options[:amount])
+          amount = money ? amount(money).to_s : nil
+          result = Braintree::Transaction.refund(transaction_id, amount)
           Response.new(result.success?, message_from_result(result))
         end
       end

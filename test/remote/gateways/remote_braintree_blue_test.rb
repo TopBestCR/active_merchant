@@ -58,7 +58,6 @@ class RemoteBraintreeBlueTest < Test::Unit::TestCase
     assert_equal customer_vault_id, response.params["braintree_transaction"].customer_details.id
   end
 
-
   def test_successful_purchase
     assert response = @gateway.purchase(@amount, @credit_card, @options)
     assert_success response
@@ -266,19 +265,6 @@ class RemoteBraintreeBlueTest < Test::Unit::TestCase
     assert customer_vault_id = response.params["customer_vault_id"]
     assert delete_response = @gateway.delete(customer_vault_id)
     assert_success delete_response
-  end
-
-  def test_successful_credit
-    assert response = @gateway.credit(@amount, @credit_card, @options)
-    assert_success response
-    assert_equal '1002 Processed', response.message
-    assert_equal 'submitted_for_settlement', response.params["braintree_transaction"].status
-  end
-
-  def test_failed_credit
-    assert response = @gateway.credit(@amount, credit_card('5105105105105101'), @options)
-    assert_failure response
-    assert_equal 'Credit card number is invalid. (81715)', response.message
   end
 
   def test_successful_update

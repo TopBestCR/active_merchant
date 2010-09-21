@@ -16,7 +16,7 @@ class BraintreeBlueTest < Test::Unit::TestCase
       with('a_transaction_id', nil).
       returns(Braintree::SuccessfulResult.new)
 
-    response = @gateway.refund('a_transaction_id')
+    response = @gateway.credit(nil, 'a_transaction_id')
     assert_success response
   end
 
@@ -25,7 +25,7 @@ class BraintreeBlueTest < Test::Unit::TestCase
       with('a_transaction_id', '12.34').
       returns(Braintree::SuccessfulResult.new)
 
-    response = @gateway.refund('a_transaction_id', :amount => '12.34')
+    response = @gateway.credit(1234, 'a_transaction_id')
     assert_success response
   end
 end
