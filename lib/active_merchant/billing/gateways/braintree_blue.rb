@@ -64,7 +64,7 @@ module ActiveMerchant #:nodoc:
 
       def store(creditcard, options = {})
         commit do
-          result = Braintree::Customer.create(
+          parameters = {
             :first_name => creditcard.first_name,
             :last_name => creditcard.last_name,
             :email => options[:email],
@@ -74,7 +74,9 @@ module ActiveMerchant #:nodoc:
               :expiration_month => creditcard.month.to_s.rjust(2, "0"),
               :expiration_year => creditcard.year.to_s
             }
-          )
+          }
+          parameters[:credit_card][:billing_address] = map_address(options[:billing_address]) if options[:billing_address]
+          result = Braintree::Customer.create(parameters)
           Response.new(result.success?, message_from_result(result),
             {
               :braintree_customer => (result.customer if result.success?),
@@ -100,11 +102,16 @@ module ActiveMerchant #:nodoc:
         end
         return customer_update_result unless customer_update_result.success?
         credit_card_update_result = commit do
-          result = Braintree::CreditCard.update(braintree_credit_card.token,
-              :number => creditcard.number,
-              :expiration_month => creditcard.month.to_s.rjust(2, "0"),
-              :expiration_year => creditcard.year.to_s
-          )
+          parameters = {
+            :number => creditcard.number,
+            :expiration_month => creditcard.month.to_s.rjust(2, "0"),
+            :expiration_year => creditcard.year.to_s
+          }
+          if options[:billing_address]
+            parameters[:billing_address] = map_address(options[:billing_address])
+            parameters[:billing_address][:options] = { :update_existing => true }
+          end
+          result = Braintree::CreditCard.update(braintree_credit_card.token, parameters)
           Response.new(result.success?, message_from_result(result),
             :braintree_customer => (Braintree::Customer.find(vault_id) if result.success?)
           )

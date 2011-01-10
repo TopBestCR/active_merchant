@@ -250,6 +250,29 @@ class RemoteBraintreeBlueTest < Test::Unit::TestCase
     assert_equal nil, response.params["customer_vault_id"]
   end
 
+  def test_store_with_billing_address
+    billing_address = {
+      :address1 => '1 E Main St',
+      :address2 => 'Suite 101',
+      :company => 'Widgets Co',
+      :city => 'Chicago',
+      :state => 'IL',
+      :zip => '60622',
+      :country => 'United States of America'
+    }
+    assert response = @gateway.store(@credit_card, :billing_address => billing_address)
+    assert_success response
+    assert_equal 'OK', response.message
+    assert_match /\A\d{6,7}\z/, response.params["customer_vault_id"]
+    assert_equal '1 E Main St', response.params["braintree_customer"].credit_cards[0].billing_address.street_address
+    assert_equal 'Suite 101', response.params["braintree_customer"].credit_cards[0].billing_address.extended_address
+    assert_equal 'Widgets Co', response.params["braintree_customer"].credit_cards[0].billing_address.company
+    assert_equal 'Chicago', response.params["braintree_customer"].credit_cards[0].billing_address.locality
+    assert_equal 'IL', response.params["braintree_customer"].credit_cards[0].billing_address.region
+    assert_equal '60622', response.params["braintree_customer"].credit_cards[0].billing_address.postal_code
+    assert_equal 'United States of America', response.params["braintree_customer"].credit_cards[0].billing_address.country_name
+  end
+
   def test_unstore
     assert response = @gateway.store(@credit_card)
     assert_success response
@@ -330,6 +353,80 @@ class RemoteBraintreeBlueTest < Test::Unit::TestCase
     assert_equal 'Email is an invalid format. (81604)', response.message
     assert_equal nil, response.params["braintree_customer"]
     assert_equal nil, response.params["customer_vault_id"]
+  end
+
+  def test_update_with_billing_address
+    assert response = @gateway.store(
+      credit_card('4111111111111111', :month => 9, :year => 2012),
+      :billing_address => {
+        :address1 => 'Old Street',
+        :address2 => 'Old Suite',
+        :company => 'Old Co',
+        :city => 'Chicago',
+        :state => 'IL',
+        :zip => '60622',
+        :country => 'United States of America'
+      }
+    )
+    assert_success response
+    assert_equal 'OK', response.message
+    customer_vault_id = response.params["customer_vault_id"]
+    assert_match /\A\d{6,7}\z/, customer_vault_id
+    assert_equal '411111', response.params["braintree_customer"].credit_cards[0].bin
+    assert_equal '09/2012', response.params["braintree_customer"].credit_cards[0].expiration_date
+    assert_equal 'Old Street', response.params["braintree_customer"].credit_cards[0].billing_address.street_address
+    assert_equal 'Old Suite', response.params["braintree_customer"].credit_cards[0].billing_address.extended_address
+    assert_equal 'Old Co', response.params["braintree_customer"].credit_cards[0].billing_address.company
+    assert_equal 'Chicago', response.params["braintree_customer"].credit_cards[0].billing_address.locality
+    assert_equal 'IL', response.params["braintree_customer"].credit_cards[0].billing_address.region
+    assert_equal '60622', response.params["braintree_customer"].credit_cards[0].billing_address.postal_code
+    assert_equal 'United States of America', response.params["braintree_customer"].credit_cards[0].billing_address.country_name
+
+    assert response = @gateway.update(
+      customer_vault_id,
+      credit_card('5105105105105100', :month => 10, :year => 2014),
+      :billing_address => {
+        :address1 => 'New Street',
+        :address2 => 'New Suite',
+        :company => 'New Co',
+        :city => 'Milwaukee',
+        :state => 'WI',
+        :zip => '53225',
+        :country => 'United States of America'
+      }
+    )
+    assert_success response
+    assert_equal '510510', response.params["braintree_customer"].credit_cards[0].bin
+    assert_equal '10/2014', response.params["braintree_customer"].credit_cards[0].expiration_date
+    assert_equal 'New Street', response.params["braintree_customer"].credit_cards[0].billing_address.street_address
+    assert_equal 'New Suite', response.params["braintree_customer"].credit_cards[0].billing_address.extended_address
+    assert_equal 'New Co', response.params["braintree_customer"].credit_cards[0].billing_address.company
+    assert_equal 'Milwaukee', response.params["braintree_customer"].credit_cards[0].billing_address.locality
+    assert_equal 'WI', response.params["braintree_customer"].credit_cards[0].billing_address.region
+    assert_equal '53225', response.params["braintree_customer"].credit_cards[0].billing_address.postal_code
+    assert_equal 'United States of America', response.params["braintree_customer"].credit_cards[0].billing_address.country_name
+  end
+
+  def test_update_billing_address_does_not_create_additional_address
+    assert response = @gateway.store(
+      credit_card('4111111111111111', :month => 9, :year => 2012),
+      :billing_address => { :address1 => 'Old Street', }
+    )
+    assert_success response
+    assert_equal 'OK', response.message
+    customer_vault_id = response.params["customer_vault_id"]
+    assert_equal 'Old Street', response.params["braintree_customer"].credit_cards[0].billing_address.street_address
+    assert_equal 1, response.params["braintree_customer"].addresses.length
+
+    assert response = @gateway.update(
+      customer_vault_id,
+      credit_card('5105105105105100', :month => 10, :year => 2014),
+      :billing_address => { :address1 => 'New Street' }
+    )
+    assert_success response
+    assert_equal 'OK', response.message
+    assert_equal 'New Street', response.params["braintree_customer"].credit_cards[0].billing_address.street_address
+    assert_equal 1, response.params["braintree_customer"].addresses.length
   end
 
   def test_failed_customer_update_invalid_vault_id
