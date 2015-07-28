@@ -2,14 +2,15 @@ module ActiveMerchant #:nodoc:
   module Billing #:nodoc:
     class PaymillGateway < Gateway
       self.supported_countries = %w(AD AT BE BG CH CY CZ DE DK EE ES FI FO FR GB
-                                    GI GR HU IE IL IS IT LI LT LU LV MT NL NO PL
-                                    PT RO SE SI SK TR VA)
+                                    GI GR HR HU IE IL IM IS IT LI LT LU LV MC MT
+                                    NL NO PL PT RO SE SI SK TR VA)
 
-      self.supported_cardtypes = [:visa, :master]
+      self.supported_cardtypes = [:visa, :master, :american_express, :diners_club, :discover, :union_pay, :jcb]
       self.homepage_url = 'https://paymill.com'
       self.display_name = 'PAYMILL'
       self.money_format = :cents
       self.default_currency = 'EUR'
+      self.live_url = "https://api.paymill.com/v2/"
 
       def initialize(options = {})
         requires!(options, :public_key, :private_key)
@@ -30,6 +31,7 @@ module ActiveMerchant #:nodoc:
         add_amount(post, money, options)
         post[:preauthorization] = preauth(authorization)
         post[:description] = options[:description]
+        post[:source] = 'active_merchant'
         commit(:post, 'transactions', post)
       end
 
@@ -49,6 +51,17 @@ module ActiveMerchant #:nodoc:
         save_card(credit_card)
       end
 
+      def supports_scrubbing
+        true
+      end
+
+      def scrub(transcript)
+        transcript.
+          gsub(%r((Authorization: Basic )\w+), '\1[FILTERED]').
+          gsub(/(account.number=)(\d*)/, '\1[FILTERED]').
+          gsub(/(account.verification=)(\d*)/, '\1[FILTERED]')
+      end
+
       private
 
       def add_credit_card(post, credit_card)
@@ -62,12 +75,16 @@ module ActiveMerchant #:nodoc:
         { 'Authorization' => ('Basic ' + Base64.strict_encode64("#{@options[:private_key]}:X").chomp) }
       end
 
-      def commit(method, url, parameters=nil)
+      def commit(method, action, parameters=nil)
         begin
-          raw_response = ssl_request(method, "https://api.paymill.com/v2/#{url}", post_data(parameters), headers)
+          raw_response = ssl_request(method, live_url + action, post_data(parameters), headers)
         rescue ResponseError => e
-          parsed = JSON.parse(e.response.body)
-          return Response.new(false, parsed['error'], parsed, {})
+          begin
+            parsed = JSON.parse(e.response.body)
+          rescue JSON::ParserError
+            return Response.new(false, "Unable to parse error response: '#{e.response.body}'")
+          end
+          return Response.new(false, response_message(parsed), parsed, {})
         end
 
         response_from(raw_response)
@@ -75,13 +92,13 @@ module ActiveMerchant #:nodoc:
 
       def response_from(raw_response)
         parsed = JSON.parse(raw_response)
-
         options = {
           :authorization => authorization_from(parsed),
           :test => (parsed['mode'] == 'test'),
         }
 
-        Response.new(true, 'Transaction approved', parsed, options)
+        succeeded = (parsed['data'] == []) || (parsed['data']['response_code'].to_i == 20000)
+        Response.new(succeeded, response_message(parsed), parsed, options)
       end
 
       def authorization_from(parsed_response)
@@ -112,6 +129,7 @@ module ActiveMerchant #:nodoc:
         add_amount(post, money, options)
         post[:token] = card_token
         post[:description] = options[:description]
+        post[:source] = 'active_merchant'
         commit(:post, 'transactions', post)
       end
 
@@ -120,6 +138,8 @@ module ActiveMerchant #:nodoc:
 
         add_amount(post, money, options)
         post[:token] = card_token
+        post[:description] = options[:description]
+        post[:source] = 'active_merchant'
         commit(:post, 'preauthorizations', post)
       end
 
@@ -175,7 +195,61 @@ module ActiveMerchant #:nodoc:
         authorization.split(';').first
       end
 
+      RESPONSE_CODES = {
+        10001 => "General undefined response.",
+        10002 => "Still waiting on something.",
+
+        20000 => "General success response.",
+
+        40000 => "General problem with data.",
+        40001 => "General problem with payment data.",
+        40100 => "Problem with credit card data.",
+        40101 => "Problem with cvv.",
+        40102 => "Card expired or not yet valid.",
+        40103 => "Limit exceeded.",
+        40104 => "Card invalid.",
+        40105 => "Expiry date not valid.",
+        40106 => "Credit card brand required.",
+        40200 => "Problem with bank account data.",
+        40201 => "Bank account data combination mismatch.",
+        40202 => "User authentication failed.",
+        40300 => "Problem with 3d secure data.",
+        40301 => "Currency / amount mismatch",
+        40400 => "Problem with input data.",
+        40401 => "Amount too low or zero.",
+        40402 => "Usage field too long.",
+        40403 => "Currency not allowed.",
+
+        50000 => "General problem with backend.",
+        50001 => "Country blacklisted.",
+        50100 => "Technical error with credit card.",
+        50101 => "Error limit exceeded.",
+        50102 => "Card declined by authorization system.",
+        50103 => "Manipulation or stolen card.",
+        50104 => "Card restricted.",
+        50105 => "Invalid card configuration data.",
+        50200 => "Technical error with bank account.",
+        50201 => "Card blacklisted.",
+        50300 => "Technical error with 3D secure.",
+        50400 => "Decline because of risk issues.",
+        50500 => "General timeout.",
+        50501 => "Timeout on side of the acquirer.",
+        50502 => "Risk management transaction timeout.",
+        50600 => "Duplicate transaction."
+      }
+
+      def response_message(parsed_response)
+        return parsed_response["error"] if parsed_response["error"]
+        return "Transaction approved." if (parsed_response['data'] == [])
+
+        code = parsed_response["data"]["response_code"].to_i
+        RESPONSE_CODES[code] || code.to_s
+      end
+
+
       class ResponseParser
+        attr_reader :raw_response, :parsed, :succeeded, :message, :options
+
         def initialize(raw_response="", options={})
           @raw_response = raw_response
           @options = options
@@ -193,7 +267,6 @@ module ActiveMerchant #:nodoc:
         end
 
         private
-        attr_reader :raw_response, :parsed, :succeeded, :message, :options
 
         def parse_response
           @parsed = JSON.parse(raw_response.sub(/jsonPFunction\(/, '').sub(/\)\z/, ''))

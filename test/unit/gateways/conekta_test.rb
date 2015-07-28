@@ -2,12 +2,12 @@ require 'test_helper'
 
 class ConektaTest < Test::Unit::TestCase
   def setup
-    @gateway = ConektaGateway.new(:key => "1tv5yJp3xnVZ7eK67m4h")
+    @gateway = ConektaGateway.new(:key => "key_eYvWV7gSDkNYXsmr")
 
     @amount = 300
 
     @credit_card = ActiveMerchant::Billing::CreditCard.new(
-      :number             => "4111111111111111",
+      :number             => "4242424242424242",
       :verification_value => "183",
       :month              => "01",
       :year               => "2018",
@@ -25,6 +25,7 @@ class ConektaTest < Test::Unit::TestCase
     )
 
     @options = {
+      :device_fingerprint => "41l9l92hjco6cuekf0c7dq68v4",
       :description => 'Blue clip',
       :success_url => "https://www.example.com/success",
       :failure_url => "https://www.example.com/failure",
@@ -66,7 +67,7 @@ class ConektaTest < Test::Unit::TestCase
 
   def test_unsuccessful_refund
     @gateway.expects(:ssl_request).returns(failed_refund_response)
-    assert response = @gateway.refund("1", @amount, @options)
+    assert response = @gateway.refund(@amount, "1", @options)
     assert_failure response
     assert response.test?
   end
@@ -89,17 +90,21 @@ class ConektaTest < Test::Unit::TestCase
 
   def test_unsuccessful_capture
     @gateway.expects(:ssl_request).returns(failed_purchase_response)
-    assert response = @gateway.capture("1", @amount, @options)
+    assert response = @gateway.capture(@amount, "1", @options)
     assert_failure response
     assert response.test?
   end
 
-  def test_invalid_login
+  def test_invalid_key
     gateway = ConektaGateway.new(:key => 'invalid_token')
     gateway.expects(:ssl_request).returns(failed_login_response)
     assert response = gateway.purchase(@amount, @credit_card, @options)
     assert_failure response
     assert response.test?
+  end
+
+  def test_transcript_scrubbing
+    assert_equal scrubbed_transcript, @gateway.scrub(transcript)
   end
 
   private
@@ -276,5 +281,13 @@ class ConektaTest < Test::Unit::TestCase
       'type' => 'authentication_error',
       'message' => 'Unrecognized authentication token'
     }.to_json
+  end
+
+  def transcript
+    "card%5Baddress%5D%5Bzip%5D=5555&card%5Bcvc%5D=183&card%5Bexp_month%5D=01&card%5Bexp_year%5D=18&card%5Bname%5D=Mario+F.+Moreno+Reyes&card%5Bnumber%5D=4242424242424242&currency=mxn&description=Blue+clip&details%5Bbilling_address%5D%5Bcity%5D=Guerrero"
+  end
+
+  def scrubbed_transcript
+    "card%5Baddress%5D%5Bzip%5D=5555&card%5Bcvc%5D=[FILTERED]&card%5Bexp_month%5D=01&card%5Bexp_year%5D=18&card%5Bname%5D=Mario+F.+Moreno+Reyes&card%5Bnumber%5D=[FILTERED]&currency=mxn&description=Blue+clip&details%5Bbilling_address%5D%5Bcity%5D=Guerrero"
   end
 end

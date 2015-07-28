@@ -86,7 +86,7 @@ module ActiveMerchant #:nodoc:
 
       def credit(money, transaction_id_or_card, options = {})
         if transaction_id_or_card.is_a?(String)
-          deprecated CREDIT_DEPRECATION_MESSAGE
+          ActiveMerchant.deprecated CREDIT_DEPRECATION_MESSAGE
           refund(money, transaction_id_or_card, options)
         else
           commit(money, build_credit_request('CREDIT', money, nil, transaction_id_or_card))
@@ -99,6 +99,16 @@ module ActiveMerchant #:nodoc:
         commit(money, build_credit_request('CREDIT', money, transaction_id, credit_card))
       end
 
+      def supports_scrubbing
+        true
+      end
+
+      def scrub(transcript)
+        transcript.
+          gsub(%r((Authorization: Basic )\w+), '\1[FILTERED]').
+          gsub(%r((<CardNum>)\d+(</CardNum>)), '\1[FILTERED]\2').
+          gsub(%r((<CVV2>)\d+(</CVV2>)), '\1[FILTERED]\2')
+      end
 
       private
 
@@ -272,4 +282,3 @@ module ActiveMerchant #:nodoc:
     end
   end
 end
-

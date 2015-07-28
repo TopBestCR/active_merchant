@@ -192,7 +192,7 @@ module ActiveMerchant #:nodoc:
       # Credit the specified account by a specific amount.
       def credit(money, identification_or_credit_card, options = {})
         if reference_transaction?(identification_or_credit_card)
-          deprecated CREDIT_DEPRECATION_MESSAGE
+          ActiveMerchant.deprecated CREDIT_DEPRECATION_MESSAGE
           # Referenced credit: refund of a settled transaction
           refund(money, identification_or_credit_card, options)
         else # must be a credit card or card reference
@@ -211,6 +211,18 @@ module ActiveMerchant #:nodoc:
         response = authorize(@options[:store_amount] || 1, payment_source, options)
         void(response.authorization) if response.success?
         response
+      end
+      
+      def supports_scrubbing?
+        true
+      end
+
+      def scrub(transcript)
+        transcript.
+        gsub(%r((Authorization: Basic )\w+), '\1[FILTERED]').
+        gsub(%r((&?cardno=)[^&]*)i, '\1[FILTERED]').
+        gsub(%r((&?cvc=)[^&]*)i, '\1[FILTERED]').
+        gsub(%r((&?pswd=)[^&]*)i, '\1[FILTERED]')
       end
 
       private
@@ -244,17 +256,18 @@ module ActiveMerchant #:nodoc:
       end
 
       def add_payment_source(post, payment_source, options)
+        add_d3d(post, options) if options[:d3d]
+
         if payment_source.is_a?(String)
           add_alias(post, payment_source, options[:alias_operation])
           add_eci(post, options[:eci] || '9')
         else
           if options.has_key?(:store)
-            deprecated OGONE_STORE_OPTION_DEPRECATION_MESSAGE
+            ActiveMerchant.deprecated OGONE_STORE_OPTION_DEPRECATION_MESSAGE
             options[:billing_id] ||= options[:store]
           end
           add_alias(post, options[:billing_id], options[:alias_operation])
           add_eci(post, options[:eci] || '7')
-          add_d3d(post, options) if options[:d3d]
           add_creditcard(post, payment_source)
         end
       end
@@ -334,6 +347,7 @@ module ActiveMerchant #:nodoc:
       end
 
       def commit(action, parameters)
+        add_pair parameters, 'RTIMEOUT', @options[:timeout] if @options[:timeout]
         add_pair parameters, 'PSPID',  @options[:login]
         add_pair parameters, 'USERID', @options[:user]
         add_pair parameters, 'PSWD',   @options[:password]
@@ -385,7 +399,7 @@ module ActiveMerchant #:nodoc:
 
       def add_signature(parameters)
         if @options[:signature].blank?
-           deprecated(OGONE_NO_SIGNATURE_DEPRECATION_MESSAGE) unless(@options[:signature_encryptor] == "none")
+           ActiveMerchant.deprecated(OGONE_NO_SIGNATURE_DEPRECATION_MESSAGE) unless(@options[:signature_encryptor] == "none")
            return
         end
 

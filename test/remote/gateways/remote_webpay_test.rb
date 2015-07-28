@@ -45,7 +45,25 @@ class RemoteWebpayTest < Test::Unit::TestCase
   def test_unsuccessful_purchase
     assert response = @gateway.purchase(@amount, @declined_card, @options)
     assert_failure response
-    assert_equal 'Your card number is incorrect', response.message
+    assert_equal 'The card number is invalid. Make sure the number entered matches your credit card.', response.message
+  end
+
+  def test_authorization_and_capture
+    assert authorization = @gateway.authorize(@amount, @credit_card, @options)
+    assert_success authorization
+    assert !authorization.params["captured"]
+
+    assert capture = @gateway.capture(@amount, authorization.authorization)
+    assert_success capture
+  end
+
+  def test_authorization_and_void
+    assert authorization = @gateway.authorize(@amount, @credit_card, @options)
+    assert_success authorization
+    assert !authorization.params["captured"]
+
+    assert void = @gateway.void(authorization.authorization)
+    assert_success void
   end
 
   def test_successful_void
@@ -59,7 +77,7 @@ class RemoteWebpayTest < Test::Unit::TestCase
   def test_unsuccessful_void
     assert void = @gateway.void("active_merchant_fake_charge")
     assert_failure void
-    assert_match 'No such charge: active_merchant_fake_charge', void.message
+    assert_match 'No such charge', void.message
   end
 
   def test_successful_refund
@@ -82,7 +100,7 @@ class RemoteWebpayTest < Test::Unit::TestCase
   def test_unsuccessful_refund
     assert refund = @gateway.refund(@amount, "active_merchant_fake_charge")
     assert_failure refund
-    assert_match 'No such charge: active_merchant_fake_charge', refund.message
+    assert_match 'No such charge', refund.message
   end
 
   def test_successful_store

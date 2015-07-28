@@ -82,7 +82,7 @@ module ActiveMerchant #:nodoc:
       end
 
       def credit(money, identification, options = {})
-        deprecated CREDIT_DEPRECATION_MESSAGE
+        ActiveMerchant.deprecated CREDIT_DEPRECATION_MESSAGE
         refund(money, identification, options)
       end
 
@@ -120,6 +120,17 @@ module ActiveMerchant #:nodoc:
       def store(credit_card, options = {})
         request  = build_token_request(credit_card, options)
         commit(:validate, request)
+      end
+
+      def supports_scrubbing
+        true
+      end
+
+      def scrub(transcript)
+        transcript.
+          gsub(%r((Authorization: Basic )\w+), '\1[FILTERED]').
+          gsub(%r((<CardNumber>)\d+(</CardNumber>)), '\1[FILTERED]\2').
+          gsub(%r((<Cvc2>)\d+(</Cvc2>)), '\1[FILTERED]\2')
       end
 
       private
@@ -227,7 +238,7 @@ module ActiveMerchant #:nodoc:
       end
 
       # The options hash may contain optional data which will be passed
-      # through the the specialized optional fields at PaymentExpress
+      # through the specialized optional fields at PaymentExpress
       # as follows:
       #
       #     {

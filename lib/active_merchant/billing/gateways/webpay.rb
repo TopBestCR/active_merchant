@@ -13,25 +13,23 @@ module ActiveMerchant #:nodoc:
       self.homepage_url = 'https://webpay.jp/'
       self.display_name = 'WebPay'
 
-      def authorize(money, credit_card, options = {})
-        raise NotImplementedError.new
-      end
-
-      def capture(money, credit_card, options = {})
-        raise NotImplementedError.new
+      def capture(money, authorization, options = {})
+        post = {}
+        add_amount(post, money, options)
+        add_application_fee(post, options)
+        commit(:post, "charges/#{CGI.escape(authorization)}/capture", post)
       end
 
       def refund(money, identification, options = {})
-        post = {:amount => localized_amount(money)}
-        commit_options = generate_meta(options)
-
+        post = {}
+        add_amount(post, money, options)
         MultiResponse.run do |r|
-          r.process { commit(:post, "charges/#{CGI.escape(identification)}/refund", post, commit_options) }
+          r.process { commit(:post, "charges/#{CGI.escape(identification)}/refund", post, options) }
 
           return r unless options[:refund_fee_amount]
 
-          r.process { fetch_application_fees(identification, commit_options) }
-          r.process { refund_application_fee(options[:refund_fee_amount], application_fee_from_response(r), commit_options) }
+          r.process { fetch_application_fees(identification, options) }
+          r.process { refund_application_fee(options[:refund_fee_amount], application_fee_from_response(r), options) }
         end
       end
 
@@ -39,17 +37,41 @@ module ActiveMerchant #:nodoc:
         raise NotImplementedError.new
       end
 
-      def localized_amount(money, currency = self.default_currency)
-        non_fractional_currency?(currency) ? (amount(money).to_f / 100).floor : amount(money)
-      end
-
-      def add_amount(post, money, options)
-        post[:currency] = (options[:currency] || currency(money)).downcase
-        post[:amount] = localized_amount(money, post[:currency].upcase)
-      end
-
       def add_customer(post, creditcard, options)
         post[:customer] = options[:customer] if options[:customer] && !creditcard.respond_to?(:number)
+      end
+
+      def store(creditcard, options = {})
+        post = {}
+        add_creditcard(post, creditcard, options)
+        post[:description] = options[:description]
+        post[:email] = options[:email]
+
+        if options[:customer]
+          MultiResponse.run(:first) do |r|
+            r.process { commit(:post, "customers/#{CGI.escape(options[:customer])}/", post, options) }
+
+            return r unless options[:set_default] and r.success? and !r.params["id"].blank?
+
+            r.process { update_customer(options[:customer], :default_card => r.params["id"]) }
+          end
+        else
+          commit(:post, 'customers', post, options)
+        end
+      end
+
+      def update(customer_id, creditcard, options = {})
+        post = {}
+        add_creditcard(post, creditcard, options)
+        commit(:post, "customers/#{CGI.escape(customer_id)}", post, options)
+      end
+
+      private
+
+      def create_post_for_auth_or_purchase(money, creditcard, options)
+        stripe_post = super
+        stripe_post[:description] ||= stripe_post.delete(:metadata).try(:[], :email)
+        stripe_post
       end
 
       def json_error(raw_response)
@@ -63,19 +85,11 @@ module ActiveMerchant #:nodoc:
       end
 
       def headers(options = {})
-        @@ua ||= JSON.dump({
-          :bindings_version => ActiveMerchant::VERSION,
-          :lang => 'ruby',
-          :lang_version => "#{RUBY_VERSION} p#{RUBY_PATCHLEVEL} (#{RUBY_RELEASE_DATE})",
-          :platform => RUBY_PLATFORM,
-          :publisher => 'active_merchant'
-        })
-
         {
           "Authorization" => "Basic " + Base64.encode64(@api_key.to_s + ":").strip,
           "User-Agent" => "Webpay/v1 ActiveMerchantBindings/#{ActiveMerchant::VERSION}",
-          "X-Webpay-Client-User-Agent" => @@ua,
-          "X-Webpay-Client-User-Metadata" => options[:meta].to_json
+          "X-Webpay-Client-User-Agent" => user_agent,
+          "X-Webpay-Client-User-Metadata" => {:ip => options[:ip]}.to_json
         }
       end
     end

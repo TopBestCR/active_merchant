@@ -12,7 +12,7 @@ module ActiveMerchant
     # login - The unique id of the merchant
     # password - The secret is used to digitally sign the request
     # account - This is an optional third part of the authentication process
-    # and is used if the merchant wishes do distuinguish cc traffic from the different sources
+    # and is used if the merchant wishes do distinguish cc traffic from the different sources
     # by using a different account. This must be created in advance
     #
     # the Realex team decided to make the orderid unique per request,
@@ -28,7 +28,8 @@ module ActiveMerchant
         'diners_club'       => 'DINERS',
         'switch'            => 'SWITCH',
         'solo'              => 'SWITCH',
-        'laser'             => 'LASER'
+        'laser'             => 'LASER',
+        'maestro'           => 'MC'
       }
 
       self.money_format = :cents
@@ -73,13 +74,23 @@ module ActiveMerchant
       end
 
       def credit(money, authorization, options = {})
-        deprecated CREDIT_DEPRECATION_MESSAGE
+        ActiveMerchant.deprecated CREDIT_DEPRECATION_MESSAGE
         refund(money, authorization, options)
       end
 
       def void(authorization, options = {})
         request = build_void_request(authorization, options)
         commit(request)
+      end
+
+      def supports_scrubbing
+        true
+      end
+
+      def scrub(transcript)
+        transcript.
+        gsub(%r((Authorization: Basic )\w+), '\1[FILTERED]').
+        gsub(%r((<number>)\d+(</number>))i, '\1[FILTERED]\2')
       end
 
       private
@@ -263,16 +274,6 @@ module ActiveMerchant
 
       def expiry_date(credit_card)
         "#{format(credit_card.month, :two_digits)}#{format(credit_card.year, :two_digits)}"
-      end
-
-      def normalize(field)
-        case field
-        when "true"   then true
-        when "false"  then false
-        when ""       then nil
-        when "null"   then nil
-        else field
-        end
       end
 
       def message_from(response)
